@@ -68,8 +68,8 @@ export const PdfReport: React.FC<PdfReportProps> = ({ result, callMetadata, sale
                 {/* Left Main Column */}
                 <div className="w-[65%]">
                     <header className="mb-6">
-                        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">{salespersonName ?? 'Sales Analysis'}</h1>
-                        <p className="text-md text-teal-600 font-medium">รายงานสรุปผลการวิเคราะห์การขาย</p>
+                        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">{salespersonName ?? 'Customer Interaction Report'}</h1>
+                        <p className="text-md text-teal-600 font-medium">รายงานสรุปข้อมูลลูกค้า</p>
                     </header>
 
                     <section className="mb-6">

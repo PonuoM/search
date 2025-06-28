@@ -1,6 +1,6 @@
 {
-  "name": "Search",
-  "description": "An application to analyze sales call transcripts or audio in Thai using Gemini API to provide insights on closing probability, sentiment, and actionable recommendations.",
+  "name": "Copy of Customer Service",
+  "description": "A customer service application to search customer history and analyze interactions using the Gemini API.",
   "requestFramePermissions": [],
   "prompt": ""
 }

@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import * as XLSX from 'xlsx';
+import React, { useState, useMemo, useCallback } from 'react';
 import type { SalesHistoryRecord } from '../types';
 import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
@@ -17,29 +16,12 @@ interface Customer {
   orderCount: number;
 }
 
-const GITHUB_REPO_URL = 'https://raw.githubusercontent.com/PonuoM/search/main/sales_data.xlsx';
+interface SalesHistoryPageProps {
+  allRecords: SalesHistoryRecord[] | null;
+  isLoading: boolean;
+  error: string | null;
+}
 
-const parseExcelDate = (serial: any): Date | null => {
-    if (!serial) return null;
-    if (serial instanceof Date && !isNaN(serial.getTime())) return serial;
-    if (typeof serial === 'number' && serial > 0) {
-        const date = new Date((serial - 25569) * 86400 * 1000);
-        return isNaN(date.getTime()) ? null : date;
-    }
-    if (typeof serial === 'string') {
-        const date = new Date(serial);
-        if (isNaN(date.getTime())) {
-            const parts = serial.split('/');
-            if (parts.length === 3) {
-                 const [day, month, year] = parts;
-                 const isoDate = new Date(`${year}-${month}-${day}`);
-                 if(!isNaN(isoDate.getTime())) return isoDate;
-            }
-        }
-        return isNaN(date.getTime()) ? null : date;
-    }
-    return null;
-};
 
 // --- Sub-components for better readability ---
 
@@ -99,87 +81,10 @@ const HistoryTable: React.FC<{ records: SalesHistoryRecord[] }> = ({ records }) 
 );
 
 
-export const SalesHistoryPage: React.FC = () => {
-  const [allRecords, setAllRecords] = useState<SalesHistoryRecord[] | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ allRecords, isLoading, error }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
-
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(GITHUB_REPO_URL);
-        if (!response.ok) {
-           if (response.status === 404) {
-             throw new Error(`ไม่พบไฟล์ (404 Not Found) ที่ URL: ${GITHUB_REPO_URL}. กรุณาตรวจสอบว่า 1) URL ถูกต้อง 2) ไฟล์ 'sales_data.xlsx' อยู่ใน branch 'main' ของ repository 3) repository ของคุณเป็นสาธารณะ (public).`);
-          }
-          throw new Error(`ไม่สามารถดาวน์โหลดไฟล์ข้อมูลได้ (HTTP Status: ${response.status})`);
-        }
-        const data = await response.arrayBuffer();
-        const workbook = XLSX.read(data, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        
-        const headerRowCheck = (XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] || []) as string[];
-        const requiredHeaders = ['วันที่ขาย', 'เบอร์โทร'];
-        if (!requiredHeaders.every(h => headerRowCheck.includes(h))) {
-          throw new Error(`ไฟล์ Excel ต้องมีคอลัมน์ที่จำเป็น: ${requiredHeaders.join(', ')}`);
-        }
-        
-        const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: null });
-        
-        // Helper to safely parse numbers that might have comma separators
-        const safeParseNumber = (val: any): number | undefined => {
-            if (val == null) return undefined;
-            // It might already be a number if the cell format is General/Number
-            if (typeof val === 'number') return val;
-            // If it's a string, remove commas and then parse.
-            const num = Number(String(val).replace(/,/g, ''));
-            return isNaN(num) ? undefined : num;
-        };
-
-        const loadedRecords: SalesHistoryRecord[] = json.map((row, index): SalesHistoryRecord | null => {
-            const date = parseExcelDate(row['วันที่ขาย']);
-            const phone = row['เบอร์โทร'] ? String(row['เบอร์โทร']).replace(/\D/g, '') : null;
-            
-            if (!date || !phone) return null;
-            
-            return {
-                'วันที่ขาย': date,
-                'เบอร์โทร': phone,
-                'ลำดับ': safeParseNumber(row['ลำดับ']),
-                'ช่องทางขาย': row['ช่องทางขาย'] ? String(row['ช่องทางขาย']) : undefined,
-                'ชำระเงิน': row['ชำระเงิน'] ? String(row['ชำระเงิน']) : undefined,
-                'ชื่อ Facebook': row['ชื่อ Facebook'] ? String(row['ชื่อ Facebook']) : undefined,
-                'พนักงานขาย': row['พนักงานขาย'] ? String(row['พนักงานขาย']) : undefined,
-                'สินค้า': row['สินค้า'] ? String(row['สินค้า']) : undefined,
-                'จำนวน': safeParseNumber(row['จำนวน']),
-                'ราคา': safeParseNumber(row['ราคา']),
-                'ชื่อผู้รับ': row['ชื่อผู้รับ'] ? String(row['ชื่อผู้รับ']) : undefined,
-                'ที่อยู่': row['ที่อยู่'] ? String(row['ที่อยู่']) : undefined,
-                'ตำบล': row['ตำบล'] ? String(row['ตำบล']) : undefined,
-                'อำเภอ': row['อำเภอ'] ? String(row['อำเภอ']) : undefined,
-                'จังหวัด': row['จังหวัด'] ? String(row['จังหวัด']) : undefined,
-                'รหัสไปรษณีย์': row['รหัสไปรษณีย์'] ? String(row['รหัสไปรษณีย์']) : undefined,
-            };
-        }).filter((record): record is SalesHistoryRecord => record !== null);
-        
-        setAllRecords(loadedRecords);
-      } catch (e) {
-        console.error("Error fetching or parsing Excel file:", e);
-        const message = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดที่ไม่รู้จัก';
-        setError(`ไม่สามารถโหลดข้อมูลจาก GitHub ได้: ${message}`);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
 
   const uniqueCustomers = useMemo((): Customer[] => {
     if (!allRecords) return [];
@@ -208,29 +113,36 @@ export const SalesHistoryPage: React.FC = () => {
     });
   }, [allRecords]);
 
-  const handleSearch = useCallback(() => {
+  const handleSearchTermChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    // Clear previous results when user types a new query
     setSelectedCustomer(null);
+    setSearchResults(null);
+  };
+
+  const handleSearch = useCallback(() => {
     if (!searchTerm.trim()) {
-        setSearchResults([]);
-        return;
+      setSearchResults([]);
+      return;
     }
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
     const results = uniqueCustomers.filter(c =>
-        c.phone.includes(searchTerm) ||
-        c.name.toLowerCase().includes(lowerCaseSearchTerm) ||
-        (c.facebookName || '').toLowerCase().includes(lowerCaseSearchTerm)
+      c.phone.includes(searchTerm.replace(/\D/g, '')) ||
+      c.name.toLowerCase().includes(lowerCaseSearchTerm) ||
+      (c.facebookName || '').toLowerCase().includes(lowerCaseSearchTerm)
     );
     if (results.length === 1) {
-        setSelectedCustomer(results[0]);
-        setSearchResults(null);
+      setSelectedCustomer(results[0]);
+      setSearchResults(null);
     } else {
-        setSearchResults(results);
+      setSearchResults(results);
     }
   }, [searchTerm, uniqueCustomers]);
 
   const handleSelectResult = (customer: Customer) => {
     setSelectedCustomer(customer);
-    setSearchResults(null); // Hide the list after selection
+    setSearchResults(null); 
+    setSearchTerm(customer.name);
   };
 
   const clearAll = () => {
@@ -260,10 +172,11 @@ export const SalesHistoryPage: React.FC = () => {
                 <input
                   type="text"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={handleSearchTermChange}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   placeholder="ค้นหาด้วยชื่อ, ชื่อ Facebook, หรือเบอร์โทรศัพท์..."
                   className="w-full pl-12 pr-4 py-3 bg-white/80 dark:bg-black/30 border-2 border-slate-300 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-lg text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 backdrop-blur-sm"
+                  autoComplete="off"
                 />
               </div>
               <button

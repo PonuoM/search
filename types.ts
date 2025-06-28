@@ -1,5 +1,4 @@
 
-
 export interface IdentifiedSalesperson {
   name: string;
   phone: string;
@@ -37,12 +36,14 @@ export interface SalespersonData {
     phone: string;
 }
 
-// Data from "ข้อมูลลูกค้า" sheet
+// This type is now mainly for the AI prompt context, not the full record.
 export interface CustomerHistoryRecord {
+  product?: string;
+  price?: number;
+  phone: string; // This is the key for matching
   date?: string;
   customerName?: string;
   salesperson?: string;
-  price?: number;
   recipientName?: string;
   secondaryPhone?: string;
   address?: string;
@@ -51,17 +52,14 @@ export interface CustomerHistoryRecord {
   deliveryDate?: string;
   deliveryRound?: string;
   customerType?: string;
-  product?: string;
   quantity?: number;
   customerId?: string;
-  phone: string; // This is the key for matching
 }
 
 // Consolidated data context from Google Sheets
 export interface DataContext {
     productContext: string | null;
     salespersons: SalespersonData[];
-    customerHistory: CustomerHistoryRecord[];
 }
 
 export interface GoogleUserProfile {
@@ -130,7 +128,7 @@ export interface AnalysisResult {
   transcribedText?: TranscribedUtterance[] | null;
 }
 
-// For the new Sales History page from XLSX
+// For the new Sales History page from XLSX and Google Sheets
 export interface SalesHistoryRecord {
   'ลำดับ'?: number;
   'วันที่ขาย': Date;

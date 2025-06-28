@@ -5,7 +5,15 @@ import type { CallMetadata } from '../types';
 const FILENAME_REGEX = /^myrecordings_(\d{8})_(\d{6})_(in|out)_([^_]+)_([^_.]+)\.(WAV|MP3|M4A|OGG|FLAC)$/i;
 
 const formatPhoneNumber = (phone: string): string => {
-  return phone.replace(/%2B/g, ''); // Remove %2B, do not prepend 0
+  // The filename contains URL-encoded phone numbers like %2B66... which is +66...
+  // This function converts them to the local format 0... for matching with database records.
+  let cleanedPhone = phone.replace(/%2B/g, ''); // Turns '%2B669...' into '669...'
+  
+  if (cleanedPhone.startsWith('66')) {
+    return '0' + cleanedPhone.substring(2); // Turns '669...' into '09...'
+  }
+  
+  return cleanedPhone;
 };
 
 export const parseCallFilename = (filename: string): CallMetadata | null => {
