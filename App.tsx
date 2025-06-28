@@ -1,5 +1,9 @@
 
 
+
+
+
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { gapi } from 'gapi-script';
 import * as XLSX from 'xlsx';
@@ -8,7 +12,6 @@ import { InputArea } from './components/InputArea';
 import { ResultsDisplay } from './components/ResultsDisplay';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorMessage } from './components/ErrorMessage';
-import { DataContextConnector } from './components/DataContextConnector';
 import { analyzeTextTranscript, analyzeAudioFile } from './services/geminiService';
 import type { AnalysisResult, CallMetadata, SalespersonData, CustomerHistoryRecord, IdentifiedSalesperson, DataContext, GoogleUserProfile, SalesHistoryRecord } from './types';
 import { InputMode } from './types'; 
@@ -72,10 +75,16 @@ const safeParseNumber = (val: any): number | undefined => {
 
 const parseRowToSalesRecord = (row: any, dateKey: string, phoneKey: string): SalesHistoryRecord | null => {
     const date = parseExcelDate(row[dateKey]);
-    const phone = row[phoneKey] ? String(row[phoneKey]).replace(/\D/g, '') : null;
-    
-    if (!date || !phone) return null;
-    
+
+    // The most critical change: Only a valid date is required to load a sales record.
+    // This ensures all rows with sales data are counted, even if the phone number is missing or malformed.
+    if (!date) return null;
+
+    const phoneRaw = row[phoneKey];
+    const phone = (phoneRaw !== null && phoneRaw !== undefined && String(phoneRaw).trim() !== '') 
+      ? String(phoneRaw).replace(/\D/g, '') 
+      : undefined;
+
     return {
         'วันที่ขาย': date,
         'เบอร์โทร': phone,
@@ -98,33 +107,37 @@ const parseRowToSalesRecord = (row: any, dateKey: string, phoneKey: string): Sal
 
 
 const App: React.FC = () => {
+  // Analyzer State
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [currentInputMode, setCurrentInputMode] = useState<InputMode>(InputMode.TEXT);
   const [transcriptText, setTranscriptText] = useState<string>('');
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [dataContext, setDataContext] = useState<Omit<DataContext, 'customerHistory'> | null>(null);
   const [callMetadata, setCallMetadata] = useState<CallMetadata | null>(null);
   const [identifiedSalesperson, setIdentifiedSalesperson] = useState<IdentifiedSalesperson | null>(null);
   const [relevantHistoryForDisplay, setRelevantHistoryForDisplay] = useState<CustomerHistoryRecord[] | null>(null);
+
+  // General App State
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [activePage, setActivePage] = useState<'analyzer' | 'history'>('analyzer');
+  const [loadingMessage, setLoadingMessage] = useState('กำลังเตรียมข้อมูล...');
+  
+  // Password State
+  const [analyzerPasswordInput, setAnalyzerPasswordInput] = useState('');
+  const isAnalyzerUnlocked = analyzerPasswordInput === '1234';
+  
+  // Google & Data State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userProfile, setUserProfile] = useState<GoogleUserProfile | null>(null);
-  const [googleSheetId, setGoogleSheetId] = useState<string>('');
+  const [googleSheetId] = useState<string>('1o8FmE0gUcS5J-SEnlceIYA86oY4aSJXMk4mY7dhEWpY');
   const [isGapiReady, setIsGapiReady] = useState(false);
-  const [activePage, setActivePage] = useState<'analyzer' | 'history'>('analyzer');
-  const [passwordInput, setPasswordInput] = useState('');
-
-  // State for Sales History data
+  const [dataContext, setDataContext] = useState<Omit<DataContext, 'customerHistory'> | null>(null);
   const [allSalesRecords, setAllSalesRecords] = useState<SalesHistoryRecord[] | null>(null);
   const [githubRecords, setGithubRecords] = useState<SalesHistoryRecord[] | null>(null);
   const [googleSheetRecords, setGoogleSheetRecords] = useState<SalesHistoryRecord[] | null>(null);
   const [historyIsLoading, setHistoryIsLoading] = useState<boolean>(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [loadingMessage, setLoadingMessage] = useState('กำลังเตรียมข้อมูล...');
-
-  const isAnalyzerUnlocked = passwordInput === '1234';
 
   // --- Data Fetching and Merging Logic ---
   useEffect(() => {
@@ -134,10 +147,10 @@ const App: React.FC = () => {
         const response = await fetch(GITHUB_SALES_DATA_URL);
         if (!response.ok) throw new Error(`ไม่สามารถดาวน์โหลดไฟล์ข้อมูลได้ (HTTP ${response.status})`);
         const data = await response.arrayBuffer();
-        const workbook = XLSX.read(data, { type: 'buffer' });
+        const workbook = XLSX.read(data, { type: 'buffer', cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: null });
+        const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null });
         
         const loadedRecords = json.map(row => parseRowToSalesRecord(row, 'วันที่ขาย', 'เบอร์โทร'))
                                   .filter((r): r is SalesHistoryRecord => r !== null);
@@ -186,7 +199,7 @@ const App: React.FC = () => {
     
     const salesMap = new Map<string, SalesHistoryRecord>();
     const createKey = (r: SalesHistoryRecord) => 
-        `${r['เบอร์โทร']}_${r['วันที่ขาย'].toISOString().split('T')[0]}_${r['สินค้า'] || ''}_${r['ราคา'] || 0}`;
+        `${r['เบอร์โทร'] || 'no-phone'}_${r['วันที่ขาย'].toISOString().split('T')[0]}_${r['สินค้า'] || ''}_${r['ราคา'] || 0}`;
 
     // Add GitHub records first.
     (githubRecords || []).forEach(record => {
@@ -220,25 +233,7 @@ const App: React.FC = () => {
       }
     }
   }, [githubRecords, googleSheetRecords, googleSheetId, isLoggedIn]);
-
   
-  // --- Remember Sheet ID Logic ---
-  useEffect(() => {
-    const savedSheetId = localStorage.getItem('googleSheetId');
-    if (savedSheetId) {
-      setGoogleSheetId(savedSheetId);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (googleSheetId) {
-      localStorage.setItem('googleSheetId', googleSheetId);
-    } else {
-      localStorage.removeItem('googleSheetId');
-    }
-  }, [googleSheetId]);
-  // --- End Remember Sheet ID Logic ---
-
   // --- Google Auth Logic ---
   useEffect(() => {
     const initClient = () => {
@@ -419,27 +414,14 @@ const App: React.FC = () => {
   if (historyIsLoading) {
     return <FullScreenLoader message={loadingMessage} />;
   }
-
-  return (
-    <div className="min-h-screen text-slate-800 dark:text-slate-200 flex flex-col items-center p-4 selection:bg-sky-500 selection:text-white transition-colors duration-300">
-       <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
-        <GoogleAuthButton isLoggedIn={isLoggedIn} userProfile={userProfile} onLogin={handleLogin} onLogout={handleLogout} isGapiReady={isGapiReady} />
-        <ThemeSwitcher theme={theme} toggleTheme={toggleTheme} />
-      </div>
-
-      <Header activePage={activePage} setActivePage={setActivePage} />
-      
-      {activePage === 'analyzer' ? (
-        isAnalyzerUnlocked ? (
+  
+  const renderPage = () => {
+    switch (activePage) {
+      case 'analyzer':
+        return isAnalyzerUnlocked ? (
           <main className="container mx-auto mt-4 mb-8 p-4 sm:p-6 lg:p-8 w-full max-w-5xl bg-slate-100/80 dark:bg-black/20 backdrop-blur-2xl shadow-2xl rounded-3xl border border-slate-200 dark:border-white/10 relative">
-              <DataContextConnector 
-                isLoading={isLoading}
-                googleSheetId={googleSheetId}
-                setGoogleSheetId={setGoogleSheetId}
-                isConnected={!!dataContext}
-              /> 
               
-              <InputArea onAnalyze={handleAnalyze} isLoading={isLoading} currentInputMode={currentInputMode} setCurrentInputMode={setCurrentInputMode} transcriptText={transcriptText} setTranscriptText={setTranscriptText} audioFile={audioFile} setAudioFile={setAudioFile} isDataConnected={!!dataContext || !!googleSheetId} />
+              <InputArea onAnalyze={handleAnalyze} isLoading={isLoading} currentInputMode={currentInputMode} setCurrentInputMode={setCurrentInputMode} transcriptText={transcriptText} setTranscriptText={setTranscriptText} audioFile={audioFile} setAudioFile={setAudioFile} isDataConnected={true} />
               {isLoading && <LoadingSpinner />}
               {error && <ErrorMessage message={error} />}
               {historyError && <ErrorMessage message={historyError} />}
@@ -454,13 +436,27 @@ const App: React.FC = () => {
               <SparklesIcon className="h-12 w-12 text-sky-500 dark:text-sky-400 mx-auto mb-4" />
               <h2 className="text-2xl font-bold mb-2">ต้องการการเข้าถึง</h2>
               <p className="text-slate-600 dark:text-slate-400 mb-6">กรุณาใส่รหัสผ่านเพื่อใช้งาน AI Analyzer</p>
-              <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} placeholder="••••••••" className="w-full px-4 py-2.5 bg-white/50 dark:bg-black/20 border-2 border-slate-300 dark:border-white/10 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-center text-lg tracking-widest" autoFocus />
+              <input type="password" value={analyzerPasswordInput} onChange={e => setAnalyzerPasswordInput(e.target.value)} placeholder="••••••••" className="w-full px-4 py-2.5 bg-white/50 dark:bg-black/20 border-2 border-slate-300 dark:border-white/10 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-center text-lg tracking-widest" autoFocus />
             </div>
           </main>
-        )
-      ) : (
-        <SalesHistoryPage allRecords={allSalesRecords} isLoading={historyIsLoading} error={historyError} />
-      )}
+        );
+      case 'history':
+        return <SalesHistoryPage allRecords={allSalesRecords} isLoading={historyIsLoading} error={historyError} />;
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <div className="min-h-screen text-slate-800 dark:text-slate-200 flex flex-col items-center p-4 selection:bg-sky-500 selection:text-white transition-colors duration-300">
+       <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <GoogleAuthButton isLoggedIn={isLoggedIn} userProfile={userProfile} onLogin={handleLogin} onLogout={handleLogout} isGapiReady={isGapiReady} />
+        <ThemeSwitcher theme={theme} toggleTheme={toggleTheme} />
+      </div>
+
+      <Header activePage={activePage} setActivePage={setActivePage} />
+      
+      {renderPage()}
 
       <footer className="text-center py-4 text-slate-500 dark:text-slate-400 text-sm">
         <p>Powered by Thanu Suriwong</p>
