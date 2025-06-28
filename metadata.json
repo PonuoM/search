@@ -1,5 +1,5 @@
 {
-  "name": "Copy of Customer Service",
+  "name": "search",
   "description": "A customer service application to search customer history and analyze interactions using the Gemini API.",
   "requestFramePermissions": [],
   "prompt": ""
