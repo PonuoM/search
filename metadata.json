@@ -1,0 +1,6 @@
+{
+  "name": "Search",
+  "description": "An application to analyze sales call transcripts or audio in Thai using Gemini API to provide insights on closing probability, sentiment, and actionable recommendations.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
